@@ -1,0 +1,11 @@
+{
+  "apps": [
+    {
+      "name": "codegraph-sse",
+      "script": "./mcp_sse_wrappers/mcp_runner.js",
+      "args": "-y supergateway --stdio 'codegraph serve --mcp' --port 8000 --baseUrl http://host.docker.internal:8000 --ssePath /sse --messagePath /message",
+      "exec_mode": "fork",
+      "autorestart": true
+    }
+  ]
+}

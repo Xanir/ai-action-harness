@@ -1,0 +1,4 @@
+mcpServers:
+  codegraph_mcp:
+    transport: "sse"
+    url: "http://host.docker.internal:8000/sse"
