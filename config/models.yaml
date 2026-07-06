@@ -1,0 +1,29 @@
+ai:
+  platforms:
+    DeepSeek:
+      url: https://api.deepseek.com/v1
+      apiKey: API_KEY_DEEPSEEK
+    Gemini:
+      url: https://generativelanguage.googleapis.com/v1beta
+      apiKey: API_KEY_GEMINI
+
+  models:
+    coder-deepseek-v4-pro:
+      platform: DeepSeek
+      base_model: deepseek-v4-pro
+      temperature: 0.7
+      max_tokens: 4000
+    mcp-builder:
+      platform: DeepSeek
+      base_model: deepseek-v4-flash
+      temperature: 0.9
+      max_tokens: 4000
+    gemini-analysis:
+      platform: Gemini
+      base_model: gemini-3.1-pro-preview
+      temperature: 0.8
+      max_tokens: 8000
+
+  roles:
+    Architect: coder-deepseek-v4-pro
+    MCP_Builder: mcp-builder

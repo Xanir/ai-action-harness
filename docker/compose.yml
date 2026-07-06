@@ -1,0 +1,11 @@
+services:
+  ai-harness:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ai-action-harness
+    container_name: ai-action-harness
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - C:/Code/creds/ai-keys.env
