@@ -17,7 +17,12 @@ import logging
 import signal
 
 from src.ai_health import run_ai_health_checks
-from src.mcp_bridge import check_infrastructure, validate_action_dependencies
+from src.mcp_bridge import (
+    MCPRegistry,
+    connect_to_mcp_servers,
+    load_mcp_registry,
+    validate_action_dependencies,
+)
 from src.models import ModelRegistry, load_model_registry
 
 logging.basicConfig(
@@ -27,10 +32,8 @@ logging.basicConfig(
 
 logger = logging.getLogger("harness")
 
-CONFIG_PATH = "config/mcp_wrappers.config.json"
-REQUIRED_SERVERS = ["codegraph_mcp"]
-
-# Sealed registry loaded once at module level — requires reboot to change.
+# Sealed registries loaded once at module level — require reboot to change.
+mcp_registry: MCPRegistry = load_mcp_registry()
 model_registry: ModelRegistry = load_model_registry()
 
 
@@ -50,13 +53,13 @@ async def main() -> None:
         logger.critical("AI platform health checks failed — terminating harness.")
         return
 
-    # ── Phase 2: parallel infrastructure health check ──────────────────
+    # ── Phase 2: parallel MCP health check ──────────────────
     logger.info("Running infrastructure pre-flight checks...")
-    status = await check_infrastructure(CONFIG_PATH)
+    status = await connect_to_mcp_servers(mcp_registry)
 
     # ── Phase 3: conditional fail-fast validation ──────────────────────
     logger.info("Validating required dependencies...")
-    validate_action_dependencies(REQUIRED_SERVERS, status)
+    validate_action_dependencies(mcp_registry, status)
     logger.info("All required services are healthy.")
 
     # ── Phase 4: keep the container alive ──────────────────────────────

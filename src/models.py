@@ -26,7 +26,7 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = Path("config/models.yaml")
+MODELS_CONFIG_PATH = Path("config/models.yaml")
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ def _resolve_api_key(env_var_name: str) -> str:
     )
 
 
-def load_model_registry(config_path: str | Path = CONFIG_PATH) -> ModelRegistry:
+def load_model_registry(config_path: str | Path = MODELS_CONFIG_PATH) -> ModelRegistry:
     """Parse *config_path*, resolve API keys, and return a frozen registry.
 
     Raises

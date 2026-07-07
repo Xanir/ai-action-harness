@@ -14,14 +14,97 @@ sequence.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 logger = logging.getLogger(__name__)
+
+
+MCP_REGISTRY_PATH = Path("config/mcp_registry.yaml")
+
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MCPRegistry:
+    """Immutable snapshot of the MCP server configuration.
+
+    Created once at startup via :func:`load_mcp_registry`.
+    Each server entry contains ``transport``, ``url``, and an optional
+    ``prompt`` that describes the server's intended purpose for use in
+     prompting an AI to build a tool call to an MCP server.
+    """
+
+    servers: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    @property
+    def server_names(self) -> list[str]:
+        """Return the list of registered MCP server names."""
+        return list(self.servers.keys())
+
+    def get_server(self, name: str) -> dict[str, str]:
+        """Look up a server's full configuration by name."""
+        if name not in self.servers:
+            raise KeyError(f"Unknown MCP server '{name}'.")
+        return self.servers[name]
+
+    def get_prompt(self, name: str) -> str | None:
+        """Return the *prompt* for *name*, or ``None`` if not defined."""
+        return self.get_server(name).get("prompt")
+
+
+def load_mcp_registry(
+    config_path: str | Path = MCP_REGISTRY_PATH,
+) -> MCPRegistry:
+    """Parse the MCP registry YAML file and return a frozen snapshot.
+
+    Expected YAML shape::
+
+        mcpServers:
+          codegraph_mcp:
+            transport: "sse"
+            url: "http://..."
+            prompt: >
+              Multi-line description of this server's purpose.
+
+    Parameters
+    ----------
+    config_path:
+        Path to the YAML registry file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the YAML file does not exist.
+    """
+    path = Path(config_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"MCP registry not found: {path}")
+
+    with path.open("r", encoding="utf-8") as fh:
+        raw: dict[str, Any] = yaml.safe_load(fh)
+
+    servers_raw: dict[str, dict[str, str]] = raw.get("mcpServers", {})
+    if not isinstance(servers_raw, dict):
+        raise ValueError(
+            f"Expected 'mcpServers' to be a mapping, got {type(servers_raw).__name__}"
+        )
+
+    logger.info(
+        "Loaded MCP registry: %d server(s) — %s.",
+        len(servers_raw),
+        ", ".join(sorted(servers_raw)) if servers_raw else "(none)",
+    )
+
+    return MCPRegistry(servers=servers_raw)
 
 
 # ---------------------------------------------------------------------------
@@ -47,10 +130,10 @@ async def connect_mcp_server(
     return tools
 
 
-async def check_infrastructure(
-    config_path: str,
+async def connect_to_mcp_servers(
+    registry: MCPRegistry,
 ) -> dict[str, tuple[bool, list | None]]:
-    """Connect to every MCP server defined in *config_path* **in parallel**.
+    """Connect to every server registered in *registry* **in parallel**.
 
     Each server is given its own ``MultiServerMCPClient`` instance (via
     :func:`~src.mcp_harness.mcp_bridge.connect_mcp_server`) so that the
@@ -59,15 +142,8 @@ async def check_infrastructure(
 
     Parameters
     ----------
-    config_path:
-        Path to the JSON configuration file.  Expected shape::
-
-            {
-              "<server_name>": {
-                "transport": "sse",
-                "url": "<endpoint>"
-              }
-            }
+    registry:
+        The :class:`MCPRegistry` snapshot loaded from the YAML config.
 
     Returns
     -------
@@ -76,7 +152,7 @@ async def check_infrastructure(
         Successful entries contain the hydrated tool list; failed entries
         contain ``None`` in the tools position.
     """
-    servers: dict[str, dict[str, str]] = _load_json_config(Path(config_path))
+    servers = registry.servers
 
     tasks = {
         name: connect_mcp_server(name, entry["transport"], entry["url"])
@@ -104,29 +180,32 @@ async def check_infrastructure(
 
 
 def validate_action_dependencies(
-    action_required_servers: list[str],
+    registry: MCPRegistry,
     infrastructure_status: dict[str, tuple[bool, Any]],
 ) -> None:
-    """Fail-fast if any *required* server is marked as unavailable.
+    """Fail-fast if any server registered in *registry* is marked as
+    unavailable.
 
-    Servers that are not in *action_required_servers* but happen to be
-    down only produce a warning — they do not block execution.
+    Every server in the registry is considered required.  Servers that
+    appear in *infrastructure_status* but are **not** in the registry
+    only produce a warning — they do not block execution.
 
     Parameters
     ----------
-    action_required_servers:
-        Names of MCP servers that the current action **must** have.
+    registry:
+        The :class:`MCPRegistry` snapshot loaded from the YAML config.
     infrastructure_status:
-        The mapping returned by :func:`check_infrastructure`.
+        The mapping returned by :func:`connect_to_mcp_servers`.
 
     Raises
     ------
     RuntimeError
-        If at least one server in *action_required_servers* has a
-        ``False`` status.  The message names every failing required
-        server.
+        If at least one registered server has a ``False`` status.  The
+        message names every failing required server.
     """
-    for name in action_required_servers:
+    required = registry.server_names
+
+    for name in required:
         if name not in infrastructure_status:
             raise RuntimeError(
                 f"Required service '{name}' was not present in the "
@@ -134,9 +213,7 @@ def validate_action_dependencies(
                 f"{sorted(infrastructure_status)}"
             )
 
-    failed_required = [
-        name for name in action_required_servers if not infrastructure_status[name][0]
-    ]
+    failed_required = [name for name in required if not infrastructure_status[name][0]]
 
     if failed_required:
         raise RuntimeError(
@@ -144,7 +221,7 @@ def validate_action_dependencies(
             f"{', '.join(failed_required)}.  Aborting action."
         )
 
-    optional_servers = set(infrastructure_status) - set(action_required_servers)
+    optional_servers = set(infrastructure_status) - set(required)
     for name in sorted(optional_servers):
         if not infrastructure_status[name][0]:
             logger.warning(
@@ -156,19 +233,6 @@ def validate_action_dependencies(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _load_json_config(path: Path) -> dict[str, dict[str, str]]:
-    """Read and validate the top-level JSON server map."""
-    if not path.is_file():
-        raise FileNotFoundError(f"Configuration file not found: {path}")
-    with path.open("r", encoding="utf-8") as fh:
-        raw: object = json.load(fh)
-    if not isinstance(raw, dict):
-        raise ValueError(
-            f"Expected a JSON object at the top level, got {type(raw).__name__}"
-        )
-    return raw  # type: ignore[return-value]
 
 
 async def _gather_ordered(
