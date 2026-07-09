@@ -4,3 +4,8 @@ mcpServers:
     url: "http://host.docker.internal:8000/sse"
     prompt: >
       Determine what features, function, and code areas might be touched based on the user prompt.
+  document_index_mcp:
+    transport: "sse"
+    url: "http://host.docker.internal:8003/sse"
+    prompt: >
+      Determine what features, function, and code areas might be touched based on the user prompt.

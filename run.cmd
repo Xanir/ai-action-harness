@@ -9,8 +9,8 @@ call docker compose -f docker/compose.yml down 2>nul
 @echo Remove the Docker image
 call docker compose -f docker/compose.yml rm -f 2>nul
 
-@echo Build the Docker image
-call docker compose -f docker/compose.yml build
+@echo Build the Docker image (no cache)
+call docker compose -f docker/compose.yml build --no-cache
 
 @echo Run the Docker Image
 call docker compose -f docker/compose.yml up -d

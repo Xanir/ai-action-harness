@@ -5,6 +5,8 @@ services:
       dockerfile: docker/Dockerfile
     image: ai-action-harness
     container_name: ai-action-harness
+    ports:
+      - "8080:8080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
